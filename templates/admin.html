@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ course }} — Presence Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    #qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+    #qr-img-wrap { position: relative; display: inline-block; }
+    #expired-overlay {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 1.4rem;
+      font-weight: 700;
+      border-radius: 8px;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    #expired-overlay.visible { display: flex; }
+  </style>
+</head>
+<body>
+
+  <!-- QR Card -->
+  <div class="card">
+    <span class="badge">{{ course }}</span>
+    <h1>Live QR Code</h1>
+    <p style="margin-bottom:1rem;">Session: <strong>{{ session_dt }}</strong></p>
+
+    <div id="qr-wrap">
+      <div id="qr-img-wrap">
+        <img id="qr-img" src="/qr.png" alt="Attendance QR" style="width:280px;height:280px;border-radius:8px;border:2px solid #e0e0e0;display:block;">
+        <div id="expired-overlay">
+          <span>⛔ Expired</span>
+          <span style="font-size:0.9rem;font-weight:400;">Click Rotate QR</span>
+        </div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:100%"></div></div>
+      <div>
+        <span id="timer-ring">60</span>
+        <span id="timer-label"> s remaining</span>
+      </div>
+      <button class="btn" id="rotate-btn" onclick="rotateNow()" style="margin-top:0.25rem;">
+        Rotate QR
+      </button>
+    </div>
+  </div>
+
+  <!-- Attendee Card -->
+  <div class="card">
+    <h2>Attendees (<span id="count">{{ attendees | length }}</span>)</h2>
+    <ul class="attendee-list" id="attendee-list">
+      {% for email in attendees %}
+        <li>{{ email }}</li>
+      {% else %}
+        <li style="color:#aaa; list-style:none;">No check-ins yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <script>
+    const TTL = 60;
+    let remaining = TTL;
+
+    function setExpired(yes) {
+      document.getElementById('expired-overlay').classList.toggle('visible', yes);
+      document.getElementById('timer-label').textContent = yes ? ' — expired' : ' s remaining';
+    }
+
+    function tick() {
+      remaining = Math.max(0, remaining - 1);
+      document.getElementById('timer-ring').textContent = remaining;
+      document.getElementById('progress-fill').style.width = (remaining / TTL * 100) + '%';
+      if (remaining === 0) setExpired(true);
+    }
+
+    async function rotateNow() {
+      const btn = document.getElementById('rotate-btn');
+      btn.disabled = true;
+      const r = await fetch('/qr/rotate', { method: 'POST' });
+      if (r.ok) {
+        const info = await r.json();
+        document.getElementById('qr-img').src = '/qr.png?t=' + info.token;
+        remaining = info.remaining_seconds;
+        setExpired(false);
+      }
+      btn.disabled = false;
+    }
+
+    async function refreshAttendees() {
+      const r = await fetch('/admin/attendees');
+      const data = await r.json();
+      const list = document.getElementById('attendee-list');
+      const countEl = document.getElementById('count');
+      if (data.error) {
+        list.innerHTML = `<li style="color:red;">Sheets error: ${data.error}</li>`;
+        return;
+      }
+      countEl.textContent = data.length;
+      if (data.length === 0) {
+        list.innerHTML = '<li style="color:#aaa;">No check-ins yet.</li>';
+      } else {
+        list.innerHTML = data.map(e => `<li>${e}</li>`).join('');
+      }
+    }
+
+    // Boot: sync remaining time from server
+    fetch('/qr/token').then(r => r.json()).then(info => {
+      remaining = info.remaining_seconds;
+      if (info.expired) setExpired(true);
+    });
+
+    setInterval(tick, 1000);
+    setInterval(refreshAttendees, 5000);
+  </script>
+
+</body>
+</html>

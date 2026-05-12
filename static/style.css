@@ -1,0 +1,126 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f4f6f9;
+    color: #1a1a2e;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 2rem 1rem;
+}
+
+.card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.10);
+    padding: 2rem;
+    width: 100%;
+    max-width: 520px;
+    margin-bottom: 1.5rem;
+}
+
+h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+h2 { font-size: 1.25rem; margin-bottom: 1rem; color: #444; }
+p  { color: #555; line-height: 1.55; }
+
+.badge {
+    display: inline-block;
+    background: #e8f0fe;
+    color: #1a73e8;
+    border-radius: 999px;
+    padding: 0.2rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* QR block */
+#qr-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+#qr-img {
+    width: 280px;
+    height: 280px;
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+}
+
+#timer-ring {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1a73e8;
+    letter-spacing: -1px;
+}
+
+#timer-label { font-size: 0.8rem; color: #888; }
+
+.progress-bar {
+    width: 280px;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #1a73e8;
+    border-radius: 999px;
+    transition: width 1s linear;
+}
+
+/* Attendee list */
+.attendee-list {
+    list-style: none;
+    margin-top: 0.75rem;
+}
+
+.attendee-list li {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.92rem;
+    color: #333;
+}
+
+.attendee-list li::before { content: "✓  "; color: #34a853; font-weight: 700; }
+
+.count { font-size: 0.85rem; color: #888; margin-bottom: 0.5rem; }
+
+/* Login form */
+.form-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
+.form-group input[type="password"] {
+    padding: 0.65rem 1rem;
+    border: 1.5px solid #ccc;
+    border-radius: 8px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.form-group input[type="password"]:focus { border-color: #1a73e8; }
+.btn {
+    padding: 0.65rem 1.5rem;
+    background: #1a73e8;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.btn:hover { background: #1558b0; }
+
+/* Success page */
+.check-icon {
+    font-size: 4rem;
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
