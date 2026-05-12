@@ -81,9 +81,11 @@ def mark_present(email: str, name: str, course: str, session_dt: datetime) -> No
         row_idx = len(all_values) + 1
         ws.update_cell(row_idx, 1, email)
 
-    # Write name and mark present (both idempotent)
-    ws.update_cell(row_idx, 2, name)
-    ws.update_cell(row_idx, col_idx, "✓")
+    # Write name and mark present in one batch call
+    ws.batch_update([
+        {"range": gspread.utils.rowcol_to_a1(row_idx, 2), "values": [[name]]},
+        {"range": gspread.utils.rowcol_to_a1(row_idx, col_idx), "values": [["✓"]]},
+    ])
 
 
 def list_present(course: str, session_dt: datetime) -> list[str]:

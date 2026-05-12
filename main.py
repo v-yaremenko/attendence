@@ -1,6 +1,9 @@
 import hmac
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
+
+TZ = timezone(timedelta(hours=3))
 
 from fastapi import Cookie, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -24,7 +27,7 @@ _session_dt: datetime = datetime.now(timezone.utc)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _session_dt
-    _session_dt = datetime.now(timezone.utc)
+    _session_dt = datetime.now(TZ)
     public_url = tunnel.start()
     qr_manager.set_public_url(public_url)
     print(f"\n  Public URL: {public_url}")
@@ -89,7 +92,7 @@ async def admin_dashboard(request: Request, admin_session: str | None = Cookie(d
         name="admin.html",
         context={
             "course": settings.course_name,
-            "session_dt": _session_dt.strftime("%Y-%m-%d %H:%M UTC"),
+            "session_dt": _session_dt.strftime("%Y-%m-%d %H:%M UTC+3"),
             "attendees": attendees,
             "public_url": tunnel.get_public_url(),
         },
@@ -106,7 +109,8 @@ async def admin_attendees(admin_session: str | None = Cookie(default=None)):
     if not _check_admin(admin_session):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     try:
-        return JSONResponse(sheets.list_present(settings.course_name, _session_dt))
+        result = await asyncio.to_thread(sheets.list_present, settings.course_name, _session_dt)
+        return JSONResponse(result)
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -238,7 +242,7 @@ async def _auth_callback_inner(
 
     redirect_uri = _callback_uri(request)
     try:
-        userinfo = auth.exchange_code(code, redirect_uri)
+        userinfo = await asyncio.to_thread(auth.exchange_code, code, redirect_uri)
     except Exception as exc:
         return HTMLResponse(f"<h2>Token exchange failed: {exc}</h2>", status_code=500)
 
@@ -252,7 +256,7 @@ async def _auth_callback_inner(
     email = userinfo["email"]
     name = userinfo.get("name", email)
     try:
-        sheets.mark_present(email, name, settings.course_name, _session_dt)
+        await asyncio.to_thread(sheets.mark_present, email, name, settings.course_name, _session_dt)
     except Exception as exc:
         return HTMLResponse(f"<h2>Could not record attendance: {exc}</h2>", status_code=500)
 
