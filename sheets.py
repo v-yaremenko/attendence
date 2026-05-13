@@ -1,10 +1,14 @@
-from datetime import datetime
+import csv
+import os
 import threading
+from datetime import datetime, timedelta, timezone
 
 import gspread
 from google.oauth2.service_account import Credentials
 
 from config import settings
+
+TZ = timezone(timedelta(hours=3))
 
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -13,7 +17,7 @@ _SCOPES = [
 
 _client: gspread.Client | None = None
 _client_lock = threading.Lock()
-_sheet_lock = threading.Lock()
+_csv_lock = threading.Lock()
 
 
 def init_client() -> None:
@@ -42,79 +46,114 @@ def _get_or_create_worksheet(spreadsheet: gspread.Spreadsheet, title: str) -> gs
 
 
 def _col_header(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%d %H:%M")
+    return dt.strftime("%Y-%m-%d")
+
+
+def _get_filename(session_dt: datetime, course: str) -> str:
+    return f"attendance_{course}_{session_dt.strftime('%Y-%m-%d')}.csv"
 
 
 def mark_present(email: str, name: str, course: str, session_dt: datetime) -> None:
-    with _sheet_lock:
-        _mark_present_locked(email, name, course, session_dt)
+    """Append attendance to a local CSV file under a thread-safe lock."""
+    filename = _get_filename(session_dt, course)
+    with _csv_lock:
+        file_exists = os.path.isfile(filename)
+        with open(filename, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["Student Email", "Name", "Timestamp"])
+            writer.writerow(
+                [email, name, datetime.now(TZ).strftime("%H:%M:%S")]
+            )
 
 
-def _mark_present_locked(email: str, name: str, course: str, session_dt: datetime) -> None:
+def list_present(course: str, session_dt: datetime) -> list[str]:
+    """Read the local CSV (no Sheets API call) and return checked-in emails."""
+    filename = _get_filename(session_dt, course)
+    with _csv_lock:
+        if not os.path.isfile(filename):
+            return []
+        with open(filename, mode="r", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+    seen: set[str] = set()
+    result: list[str] = []
+    for row in rows[1:]:
+        if row and row[0] and row[0] not in seen:
+            seen.add(row[0])
+            result.append(row[0])
+    return result
+
+
+def flush_to_sheets(course: str, session_dt: datetime) -> dict:
+    """Upload the local CSV for this session to Google Sheets in one batch.
+
+    Returns {"count": N, "filename": str, "column": str}. Raises FileNotFoundError
+    if the local CSV doesn't exist.
+    """
+    filename = _get_filename(session_dt, course)
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Local file {filename} not found")
+
+    # Load local data — last name wins for duplicate emails.
+    attendees: dict[str, str] = {}
+    with _csv_lock:
+        with open(filename, mode="r", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+    for row in rows[1:]:
+        if row and len(row) >= 2 and row[0]:
+            attendees[row[0]] = row[1]
+
+    col_label = _col_header(session_dt)
+    if not attendees:
+        return {"count": 0, "filename": filename, "column": col_label}
+
     client = _get_client()
     spreadsheet = client.open_by_key(settings.google_spreadsheet_id)
     ws = _get_or_create_worksheet(spreadsheet, course)
 
-    # Read everything once
-    all_values = ws.get_all_values()
-    header = all_values[0] if all_values else []
+    all_rows = ws.get_all_values()
+    header = all_rows[0] if all_rows else []
 
-    # Fix sheet structure: ensure col A = "Student", col B = "Name"
-    # If "Name" is missing at col B, insert a blank column via the Sheets API
+    # Repair old sheets that have no "Name" column at B.
     if len(header) < 2 or header[1] != "Name":
         spreadsheet.batch_update({"requests": [{
             "insertDimension": {
                 "range": {
                     "sheetId": ws.id,
                     "dimension": "COLUMNS",
-                    "startIndex": 1,  # 0-indexed: inserts at col B
+                    "startIndex": 1,
                     "endIndex": 2,
                 },
                 "inheritFromBefore": False,
             }
         }]})
         ws.update_cell(1, 2, "Name")
-        # Re-read after structural change
-        all_values = ws.get_all_values()
-        header = all_values[0] if all_values else []
+        all_rows = ws.get_all_values()
+        header = all_rows[0] if all_rows else []
 
-    col_label = _col_header(session_dt)
-
-    # Find or create date column (must be col 3+)
     if col_label in header:
-        col_idx = header.index(col_label) + 1  # 1-based
+        col_idx = header.index(col_label) + 1
     else:
         col_idx = max(len(header) + 1, 3)
         ws.update_cell(1, col_idx, col_label)
 
-    # Find or create student row
-    emails_col = [row[0] if row else "" for row in all_values]
-    if email in emails_col:
-        row_idx = emails_col.index(email) + 1  # 1-based
-    else:
-        row_idx = len(all_values) + 1
-        ws.update_cell(row_idx, 1, email)
+    emails_in_col_a = [r[0] if r else "" for r in all_rows]
+    batch_updates: list[dict] = []
+    for email, name in attendees.items():
+        if email in emails_in_col_a:
+            row_idx = emails_in_col_a.index(email) + 1
+        else:
+            row_idx = len(emails_in_col_a) + 1
+            emails_in_col_a.append(email)
+            batch_updates.append({
+                "range": f"A{row_idx}:B{row_idx}",
+                "values": [[email, name]],
+            })
+        batch_updates.append({
+            "range": gspread.utils.rowcol_to_a1(row_idx, col_idx),
+            "values": [["✓"]],
+        })
 
-    # Write name and mark present in one batch call
-    ws.batch_update([
-        {"range": gspread.utils.rowcol_to_a1(row_idx, 2), "values": [[name]]},
-        {"range": gspread.utils.rowcol_to_a1(row_idx, col_idx), "values": [["✓"]]},
-    ])
+    ws.batch_update(batch_updates)
 
-
-def list_present(course: str, session_dt: datetime) -> list[str]:
-    client = _get_client()
-    spreadsheet = client.open_by_key(settings.google_spreadsheet_id)
-    ws = spreadsheet.worksheet(course)
-    header = ws.row_values(1)
-    col_label = _col_header(session_dt)
-    if col_label not in header:
-        return []
-    col_idx = header.index(col_label) + 1
-    col_values = ws.col_values(col_idx)
-    emails = ws.col_values(1)
-    return [
-        emails[i]
-        for i, val in enumerate(col_values)
-        if i > 0 and val == "✓" and i < len(emails)
-    ]
+    return {"count": len(attendees), "filename": filename, "column": col_label}

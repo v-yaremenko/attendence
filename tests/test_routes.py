@@ -152,6 +152,30 @@ def test_attendees_without_cookie_returns_401(anon_client):
     assert r.status_code == 401
 
 
+# --- /admin/flush ---
+
+def test_flush_without_cookie_returns_401(anon_client):
+    r = anon_client.post("/admin/flush")
+    assert r.status_code == 401
+
+
+def test_flush_returns_stats_on_success(client, admin_cookie):
+    fake_stats = {"count": 3, "filename": "x.csv", "column": "2026-05-14"}
+    with patch("asyncio.to_thread", side_effect=_sync), \
+         patch("sheets.flush_to_sheets", return_value=fake_stats):
+        r = client.post("/admin/flush", cookies={"admin_session": admin_cookie})
+    assert r.status_code == 200
+    assert r.json() == fake_stats
+
+
+def test_flush_returns_404_when_no_csv(client, admin_cookie):
+    with patch("asyncio.to_thread", side_effect=_sync), \
+         patch("sheets.flush_to_sheets", side_effect=FileNotFoundError("no csv")):
+        r = client.post("/admin/flush", cookies={"admin_session": admin_cookie})
+    assert r.status_code == 404
+    assert "no csv" in r.json()["error"]
+
+
 # Helper: replaces asyncio.to_thread — must be async so `await` works
 async def _sync(fn, *args, **kwargs):
     return fn(*args, **kwargs)

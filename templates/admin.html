@@ -63,6 +63,10 @@
         <li style="color:#aaa; list-style:none;">No check-ins yet.</li>
       {% endfor %}
     </ul>
+    <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center;">
+      <button class="btn" id="flush-btn" onclick="flushToSheets()">Flush to Google Sheets</button>
+      <span id="flush-status" style="font-size:0.9rem; color:#666;"></span>
+    </div>
   </div>
 
   <script>
@@ -92,6 +96,30 @@
         setExpired(false);
       }
       btn.disabled = false;
+    }
+
+    async function flushToSheets() {
+      const btn = document.getElementById('flush-btn');
+      const status = document.getElementById('flush-status');
+      btn.disabled = true;
+      status.style.color = '#666';
+      status.textContent = 'Uploading…';
+      try {
+        const r = await fetch('/admin/flush', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) {
+          status.style.color = '#c00';
+          status.textContent = 'Failed: ' + (data.error || r.status);
+        } else {
+          status.style.color = '#080';
+          status.textContent = `Uploaded ${data.count} attendees to column "${data.column}".`;
+        }
+      } catch (e) {
+        status.style.color = '#c00';
+        status.textContent = 'Failed: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function refreshAttendees() {

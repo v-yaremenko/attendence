@@ -116,27 +116,17 @@ async def admin_attendees(admin_session: str | None = Cookie(default=None)):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/admin/debug")
-async def admin_debug(admin_session: str | None = Cookie(default=None)):
+@app.post("/admin/flush")
+async def admin_flush(admin_session: str | None = Cookie(default=None)):
     if not _check_admin(admin_session):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-        creds = Credentials.from_service_account_file(
-            settings.google_service_account_json,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        stats = await asyncio.to_thread(
+            sheets.flush_to_sheets, settings.course_name, _session_dt
         )
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open_by_key(settings.google_spreadsheet_id)
-        ws = spreadsheet.worksheet(settings.course_name)
-        header = ws.row_values(1)
-        return JSONResponse({
-            "session_dt": _session_dt.isoformat(),
-            "looking_for_column": sheets._col_header(_session_dt),
-            "sheet_headers": header,
-            "course": settings.course_name,
-        })
+        return JSONResponse(stats)
+    except FileNotFoundError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
