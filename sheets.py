@@ -1,9 +1,10 @@
-from datetime import datetime
-
 import gspread
 from google.oauth2.service_account import Credentials
-
-from config import settings
+import csv
+import os
+import threading
+from datetime import datetime
+from config import settings  #
 
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -35,72 +36,39 @@ def _get_or_create_worksheet(spreadsheet: gspread.Spreadsheet, title: str) -> gs
 def _col_header(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M")
 
+# A lock to prevent race conditions when 50 students write at the same time
+_lock = threading.Lock()
+
+
+def _get_filename(session_dt: datetime, course: str) -> str:
+    # Generates: attendance_OOP_2026-05-13.csv
+    return f"attendance_{course}_{session_dt.strftime('%Y-%m-%d')}.csv"
+
 
 def mark_present(email: str, name: str, course: str, session_dt: datetime) -> None:
-    client = _get_client()
-    spreadsheet = client.open_by_key(settings.google_spreadsheet_id)
-    ws = _get_or_create_worksheet(spreadsheet, course)
+    """Saves attendance to a local CSV file using a thread-safe lock."""
+    filename = _get_filename(session_dt, course)
+    file_exists = os.path.isfile(filename)
 
-    # Read everything once
-    all_values = ws.get_all_values()
-    header = all_values[0] if all_values else []
+    with _lock:
+        with open(filename, mode='a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            # Write headers if it's a brand new file
+            if not file_exists:
+                writer.writerow(["Student Email", "Name", "Timestamp"])
 
-    # Fix sheet structure: ensure col A = "Student", col B = "Name"
-    # If "Name" is missing at col B, insert a blank column via the Sheets API
-    if len(header) < 2 or header[1] != "Name":
-        spreadsheet.batch_update({"requests": [{
-            "insertDimension": {
-                "range": {
-                    "sheetId": ws.id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 1,  # 0-indexed: inserts at col B
-                    "endIndex": 2,
-                },
-                "inheritFromBefore": False,
-            }
-        }]})
-        ws.update_cell(1, 2, "Name")
-        # Re-read after structural change
-        all_values = ws.get_all_values()
-        header = all_values[0] if all_values else []
-
-    col_label = _col_header(session_dt)
-
-    # Find or create date column (must be col 3+)
-    if col_label in header:
-        col_idx = header.index(col_label) + 1  # 1-based
-    else:
-        col_idx = max(len(header) + 1, 3)
-        ws.update_cell(1, col_idx, col_label)
-
-    # Find or create student row
-    emails_col = [row[0] if row else "" for row in all_values]
-    if email in emails_col:
-        row_idx = emails_col.index(email) + 1  # 1-based
-    else:
-        row_idx = len(all_values) + 1
-        ws.update_cell(row_idx, 1, email)
-
-    # Write name and mark present in one batch call
-    ws.batch_update([
-        {"range": gspread.utils.rowcol_to_a1(row_idx, 2), "values": [[name]]},
-        {"range": gspread.utils.rowcol_to_a1(row_idx, col_idx), "values": [["✓"]]},
-    ])
+            # Record the student
+            writer.writerow([email, name, datetime.now().strftime("%H:%M:%S")])
 
 
 def list_present(course: str, session_dt: datetime) -> list[str]:
-    client = _get_client()
-    spreadsheet = client.open_by_key(settings.google_spreadsheet_id)
-    ws = spreadsheet.worksheet(course)
-    header = ws.row_values(1)
-    col_label = _col_header(session_dt)
-    if col_label not in header:
+    """Reads the local CSV to update the admin dashboard count."""
+    filename = _get_filename(session_dt, course)
+    if not os.path.isfile(filename):
         return []
-    col_idx = header.index(col_label) + 1
-    col_values = ws.col_values(col_idx)
-    emails = ws.col_values(1)
-    return [
-        emails[i]
-        for i, val in enumerate(col_values)
-        if i > 0 and val == "✓" and i < len(emails)
-    ]
+
+    with _lock:
+        with open(filename, mode='r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            return [row[0] for row in rows[1:] if row]
