@@ -28,6 +28,7 @@ _session_dt: datetime = datetime.now(timezone.utc)
 async def lifespan(app: FastAPI):
     global _session_dt
     _session_dt = datetime.now(TZ)
+    sheets.init_client()
     public_url = tunnel.start()
     qr_manager.set_public_url(public_url)
     print(f"\n  Public URL: {public_url}")

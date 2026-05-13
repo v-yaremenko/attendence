@@ -1,4 +1,5 @@
 from datetime import datetime
+import threading
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -11,15 +12,23 @@ _SCOPES = [
 ]
 
 _client: gspread.Client | None = None
+_client_lock = threading.Lock()
+_sheet_lock = threading.Lock()
+
+
+def init_client() -> None:
+    _get_client()
 
 
 def _get_client() -> gspread.Client:
     global _client
     if _client is None:
-        creds = Credentials.from_service_account_file(
-            settings.google_service_account_json, scopes=_SCOPES
-        )
-        _client = gspread.authorize(creds)
+        with _client_lock:
+            if _client is None:
+                creds = Credentials.from_service_account_file(
+                    settings.google_service_account_json, scopes=_SCOPES
+                )
+                _client = gspread.authorize(creds)
     return _client
 
 
@@ -37,6 +46,11 @@ def _col_header(dt: datetime) -> str:
 
 
 def mark_present(email: str, name: str, course: str, session_dt: datetime) -> None:
+    with _sheet_lock:
+        _mark_present_locked(email, name, course, session_dt)
+
+
+def _mark_present_locked(email: str, name: str, course: str, session_dt: datetime) -> None:
     client = _get_client()
     spreadsheet = client.open_by_key(settings.google_spreadsheet_id)
     ws = _get_or_create_worksheet(spreadsheet, course)
