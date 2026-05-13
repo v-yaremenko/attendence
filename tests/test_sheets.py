@@ -8,7 +8,8 @@ import sheets
 
 
 SESSION_DT = datetime(2026, 5, 12, 19, 53, tzinfo=timezone.utc)
-COL_LABEL = "2026-05-12"
+COL_LABEL = "2026-05-12 19:53"
+FILE_SUFFIX = "2026-05-12_19-53"
 
 
 @pytest.fixture(autouse=True)
@@ -25,11 +26,33 @@ def test_col_header_format():
     assert sheets._col_header(SESSION_DT) == COL_LABEL
 
 
-def test_get_filename_includes_course_and_date():
+def test_get_filename_includes_course_and_session_dt():
     assert (
         sheets._get_filename(SESSION_DT, "OOP")
-        == "attendance_OOP_2026-05-12.csv"
+        == f"attendance_OOP_{FILE_SUFFIX}.csv"
     )
+
+
+def test_find_latest_session_file_picks_newest(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # Three sessions, two for OOP, one for an unrelated course.
+    for name in (
+        "attendance_OOP_2026-05-12_10-00.csv",
+        "attendance_OOP_2026-05-14_13-30.csv",
+        "attendance_DSA_2026-05-15_09-00.csv",
+    ):
+        (tmp_path / name).write_text("Student Email,Name,Timestamp\n")
+
+    result = sheets.find_latest_session_file("OOP")
+    assert result is not None
+    filename, dt = result
+    assert filename.endswith("attendance_OOP_2026-05-14_13-30.csv")
+    assert dt.strftime("%Y-%m-%d %H:%M") == "2026-05-14 13:30"
+
+
+def test_find_latest_session_file_returns_none_when_no_match(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert sheets.find_latest_session_file("OOP") is None
 
 
 # --- mark_present (local CSV) ---

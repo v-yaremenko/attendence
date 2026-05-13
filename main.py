@@ -1,9 +1,13 @@
 import hmac
 from contextlib import asynccontextmanager
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 TZ = timezone(timedelta(hours=3))
+# Default asyncio executor is min(32, cpu+4) workers — too small for 70+
+# concurrent OAuth callbacks (each runs httpx.exchange_code in a thread).
+THREAD_POOL_SIZE = 100
 
 from fastapi import Cookie, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -28,6 +32,9 @@ _session_dt: datetime = datetime.now(timezone.utc)
 async def lifespan(app: FastAPI):
     global _session_dt
     _session_dt = datetime.now(TZ)
+    asyncio.get_running_loop().set_default_executor(
+        ThreadPoolExecutor(max_workers=THREAD_POOL_SIZE, thread_name_prefix="pc")
+    )
     sheets.init_client()
     public_url = tunnel.start()
     qr_manager.set_public_url(public_url)
@@ -224,12 +231,10 @@ async def _auth_callback_inner(
     if saved.get("state") != state:
         return HTMLResponse("<h2>CSRF check failed. Please scan the QR again.</h2>", status_code=400)
 
-    attendance_token = saved.get("token", "")
-    if not qr_manager.validate_token(attendance_token):
-        return HTMLResponse(
-            "<h2>QR code expired during sign-in.</h2><p>Ask your teacher to show a fresh QR.</p>",
-            status_code=410,
-        )
+    # The signed cookie proves the QR was valid when scanned (we only set it
+    # after qr_manager.validate_token passed in /attend). The browser-enforced
+    # max_age=120s on that cookie bounds replay. Re-checking the token here
+    # would fail any student who takes >60s to finish Google OAuth.
 
     redirect_uri = _callback_uri(request)
     try:

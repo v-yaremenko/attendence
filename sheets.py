@@ -1,5 +1,7 @@
 import csv
+import glob
 import os
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +11,9 @@ from google.oauth2.service_account import Credentials
 from config import settings
 
 TZ = timezone(timedelta(hours=3))
+
+# Matches the trailing "_YYYY-MM-DD_HH-MM.csv" suffix in attendance filenames.
+_SESSION_DT_RE = re.compile(r"_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2})\.csv$")
 
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -46,11 +51,32 @@ def _get_or_create_worksheet(spreadsheet: gspread.Spreadsheet, title: str) -> gs
 
 
 def _col_header(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%d")
+    return dt.strftime("%Y-%m-%d %H:%M")
 
 
 def _get_filename(session_dt: datetime, course: str) -> str:
-    return f"attendance_{course}_{session_dt.strftime('%Y-%m-%d')}.csv"
+    return f"attendance_{course}_{session_dt.strftime('%Y-%m-%d_%H-%M')}.csv"
+
+
+def find_latest_session_file(course: str) -> tuple[str, datetime] | None:
+    """Return (filename, session_dt) for the most recent CSV for this course.
+
+    Used by the CLI flush — the running server already knows its own
+    session_dt in memory. Returns None if no matching file is found.
+    """
+    parsed: list[tuple[str, datetime]] = []
+    for f in glob.glob(f"attendance_{course}_*.csv"):
+        m = _SESSION_DT_RE.search(f)
+        if not m:
+            continue
+        try:
+            dt = datetime.strptime(m.group(1), "%Y-%m-%d_%H-%M").replace(tzinfo=TZ)
+        except ValueError:
+            continue
+        parsed.append((f, dt))
+    if not parsed:
+        return None
+    return max(parsed, key=lambda x: x[1])
 
 
 def mark_present(email: str, name: str, course: str, session_dt: datetime) -> None:
