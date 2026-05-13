@@ -1,4 +1,5 @@
 import hmac
+import logging
 from contextlib import asynccontextmanager
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +9,19 @@ TZ = timezone(timedelta(hours=3))
 # Default asyncio executor is min(32, cpu+4) workers — too small for 70+
 # concurrent OAuth callbacks (each runs httpx.exchange_code in a thread).
 THREAD_POOL_SIZE = 100
+
+
+class _AccessLogFilter(logging.Filter):
+    """Drop uvicorn access logs for dashboard-polled endpoints."""
+
+    QUIET_PATHS = ("/admin/attendees",)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(p in msg for p in self.QUIET_PATHS)
+
+
+logging.getLogger("uvicorn.access").addFilter(_AccessLogFilter())
 
 from fastapi import Cookie, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
