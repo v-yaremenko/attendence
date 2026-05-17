@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     ngrok_domain: str = ""
     tunnel_mode: str = "ngrok"  # "ngrok" | "cloudflare"
     cloudflare_public_url: str = ""
+    cloudflare_tunnel_name: str = ""
 
 
 settings = Settings()
