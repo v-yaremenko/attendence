@@ -1,12 +1,20 @@
-from pyngrok import ngrok, conf
-from pyngrok.exception import PyngrokNgrokHTTPError
-from config import settings  #
+from config import settings
 
 _public_url: str = ""
 
 
 def start(port: int = 8000) -> str:
     global _public_url
+
+    if settings.tunnel_mode == "cloudflare":
+        if not settings.cloudflare_public_url:
+            raise RuntimeError("CLOUDFLARE_PUBLIC_URL must be set when TUNNEL_MODE=cloudflare")
+        _public_url = settings.cloudflare_public_url.rstrip("/")
+        return _public_url
+
+    from pyngrok import ngrok, conf
+    from pyngrok.exception import PyngrokNgrokHTTPError
+
     if settings.ngrok_auth_token:
         conf.get_default().auth_token = settings.ngrok_auth_token
 

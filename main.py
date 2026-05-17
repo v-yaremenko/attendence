@@ -100,7 +100,7 @@ async def admin_login(response: Response, key: str = Form(...)):
     if not hmac.compare_digest(key, settings.admin_key):
         return HTMLResponse("<p>Wrong key. <a href='/admin/login'>Try again</a></p>", status_code=401)
     resp = RedirectResponse("/admin", status_code=303)
-    resp.set_cookie("admin_session", _sign_admin_cookie(), httponly=True, samesite="lax")
+    resp.set_cookie("admin_session", _sign_admin_cookie(), httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)
     return resp
 
 

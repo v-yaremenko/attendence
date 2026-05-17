@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     course_name: str = "OOP"
     ngrok_auth_token: str = ""
     ngrok_domain: str = ""
+    tunnel_mode: str = "ngrok"  # "ngrok" | "cloudflare"
+    cloudflare_public_url: str = ""
 
 
 settings = Settings()
