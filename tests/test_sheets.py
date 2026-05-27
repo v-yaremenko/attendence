@@ -14,8 +14,8 @@ FILE_SUFFIX = "2026-05-12_19-53"
 
 @pytest.fixture(autouse=True)
 def _isolate_csv(tmp_path, monkeypatch):
-    """Run every test in a tmp working dir so CSVs don't leak between tests."""
-    monkeypatch.chdir(tmp_path)
+    """Redirect CSV_DIR to a tmp path so CSVs don't leak between tests."""
+    monkeypatch.setattr(sheets, "CSV_DIR", tmp_path)
     yield
 
 
@@ -27,9 +27,8 @@ def test_col_header_format():
 
 
 def test_get_filename_includes_course_and_session_dt():
-    assert (
-        sheets._get_filename(SESSION_DT, "OOP")
-        == f"attendance_OOP_{FILE_SUFFIX}.csv"
+    assert sheets._get_filename(SESSION_DT, "OOP").endswith(
+        f"attendance_OOP_{FILE_SUFFIX}.csv"
     )
 
 

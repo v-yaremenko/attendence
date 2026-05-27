@@ -4,6 +4,7 @@ import os
 import re
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -11,6 +12,9 @@ from google.oauth2.service_account import Credentials
 from config import settings
 
 TZ = timezone(timedelta(hours=3))
+
+CSV_DIR = Path(__file__).parent / "csv_files"
+CSV_DIR.mkdir(exist_ok=True)
 
 # Matches the trailing "_YYYY-MM-DD_HH-MM.csv" suffix in attendance filenames.
 _SESSION_DT_RE = re.compile(r"_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2})\.csv$")
@@ -55,7 +59,7 @@ def _col_header(dt: datetime) -> str:
 
 
 def _get_filename(session_dt: datetime, course: str) -> str:
-    return f"attendance_{course}_{session_dt.strftime('%Y-%m-%d_%H-%M')}.csv"
+    return str(CSV_DIR / f"attendance_{course}_{session_dt.strftime('%Y-%m-%d_%H-%M')}.csv")
 
 
 def find_latest_session_file(course: str) -> tuple[str, datetime] | None:
@@ -65,7 +69,7 @@ def find_latest_session_file(course: str) -> tuple[str, datetime] | None:
     session_dt in memory. Returns None if no matching file is found.
     """
     parsed: list[tuple[str, datetime]] = []
-    for f in glob.glob(f"attendance_{course}_*.csv"):
+    for f in glob.glob(str(CSV_DIR / f"attendance_{course}_*.csv")):
         m = _SESSION_DT_RE.search(f)
         if not m:
             continue
